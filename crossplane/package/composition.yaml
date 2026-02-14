@@ -1,0 +1,398 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xmachine-bpg.infra.kubelize.io
+  labels:
+    provider: proxmox-bpg
+spec:
+  writeConnectionSecretsToNamespace: crossplane-system
+  
+  compositeTypeRef:
+    apiVersion: infra.kubelize.io/v1alpha1
+    kind: XMachine
+  
+  mode: Pipeline
+  pipeline:
+    - step: patch-and-transform  
+      functionRef:
+        name: function-patch-and-transform
+      input:
+        apiVersion: pt.fn.crossplane.io/v1beta1
+        kind: Resources
+        resources:
+          # Main VM resource using provider-proxmox-bpg (v1.3.0+)
+          # Based on bpg/terraform-provider-proxmox wrapped as native Crossplane provider
+          # Docs: https://marketplace.upbound.io/providers/valkiriaaquaticamendi/provider-proxmox-bpg/v1.3.0
+          - name: virtualmachine
+            base:
+              apiVersion: virtualenvironmentvm.proxmoxbpg.crossplane.io/v1alpha1
+              kind: EnvironmentVM
+              spec:
+                forProvider:
+                  # VM name - patched from claim
+                  name: ""
+                  
+                  # Node name - patched from claim
+                  nodeName: ""
+                  
+                  # Clone from template
+                  clone:
+                    - nodeName: ""  # Node where template exists, will be patched
+                      vmId: 0       # Template VM ID (must be an integer), will be patched
+                      full: true    # Full clone (vs linked clone)
+                  
+                  # CPU configuration
+                  cpu:
+                    - cores: 2      # Will be patched from spec.cpu.cores
+                      sockets: 1    # Will be patched from spec.cpu.sockets (optional)
+                      type: "host"  # Or "kvm64" for compatibility
+                  
+                  # Memory in MB (array)
+                  memory:
+                    - dedicated: 4096  # Will be patched from spec.memory.size
+                  
+                  # Disk configuration
+                  disk:
+                    - interface: "scsi0"
+                      datastoreId: ""  # Will be patched from storage
+                      size: 32          # Will be patched from spec.disk.size (optional)
+                      fileFormat: "raw"
+                      discard: "on"
+                  
+                  # Network configuration
+                  networkDevice:
+                    - bridge: ""        # Will be patched from bridge
+                      model: "virtio"
+                      firewall: true
+                  
+                  # QEMU Agent (array)
+                  agent:
+                    - enabled: true
+                      trim: true
+                      type: "virtio"
+                  
+                  # Boot order (array at root level)
+                  bootOrder:
+                    - "scsi0"
+                  
+                  # Start on boot
+                  onBoot: true
+                  
+                  # Operating system type (array)
+                  operatingSystem:
+                    - type: "l26"  # Linux 2.6+ kernel
+                
+                providerConfigRef:
+                  name: default
+            
+            patches:
+              # === Hostname ===
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.hostname
+                toFieldPath: spec.forProvider.name
+              
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.hostname
+                toFieldPath: metadata.labels['fabric.io/hostname']
+              
+              # === Proxmox Node ===
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.proxmox.node
+                toFieldPath: spec.forProvider.nodeName
+                policy:
+                  fromFieldPath: Optional
+              
+              # Also patch clone node (template location)
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.proxmox.node
+                toFieldPath: spec.forProvider.clone[0].nodeName
+                policy:
+                  fromFieldPath: Optional
+              
+              # === Storage ===
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.proxmox.storage
+                toFieldPath: spec.forProvider.disk[0].datastoreId
+              
+              # === Network Bridge ===
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.proxmox.bridge
+                toFieldPath: spec.forProvider.networkDevice[0].bridge
+              
+              # === VLAN (optional) ===
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.proxmox.vlan
+                toFieldPath: spec.forProvider.networkDevice[0].vlanId
+                policy:
+                  fromFieldPath: Optional
+              
+              # === Template/Image ===
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.image
+                toFieldPath: spec.forProvider.clone[0].vmId
+                transforms:
+                  - type: map
+                    map:
+                      nixos-23-11-template: 9000  # Replace with your actual template ID
+                      nixos-24-05-template: 9001
+              
+              # === CPU Configuration ===
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.cpu.cores
+                toFieldPath: spec.forProvider.cpu[0].cores
+              
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.cpu.sockets
+                toFieldPath: spec.forProvider.cpu[0].sockets
+                policy:
+                  fromFieldPath: Optional
+              
+              # === Memory Configuration (MB) ===
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.memory.size
+                toFieldPath: spec.forProvider.memory[0].dedicated
+              
+              # === Disk Size (GB) ===
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.disk.size
+                toFieldPath: spec.forProvider.disk[0].size
+                policy:
+                  fromFieldPath: Optional
+              
+              # === Status fields ===
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.id
+                toFieldPath: status.vmId
+              
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.ipAddress
+                toFieldPath: status.ipAddress
+                policy:
+                  fromFieldPath: Optional
+              
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.state
+                toFieldPath: status.state
+                policy:
+                  fromFieldPath: Optional
+            
+            readinessChecks:
+              - type: MatchString
+                fieldPath: status.atProvider.status
+                matchString: "running"
+
+---
+# Alternative Composition using Terraform provider (fallback option)
+# Keep this for reference or if you prefer the Terraform provider approach
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xmachine-terraform.infra.kubelize.io
+  labels:
+    provider: terraform
+spec:
+  writeConnectionSecretsToNamespace: crossplane-system
+  
+  compositeTypeRef:
+    apiVersion: infra.kubelize.io/v1alpha1
+    kind: XMachine
+  
+  mode: Pipeline
+  pipeline:
+    - step: patch-and-transform
+      functionRef:
+        name: function-patch-and-transform
+      input:
+        apiVersion: pt.fn.crossplane.io/v1beta1
+        kind: Resources
+        resources:
+          - name: proxmox-vm
+            base:
+              apiVersion: tf.upbound.io/v1beta1
+              kind: Workspace
+              spec:
+                forProvider:
+                  source: Inline
+                  module: |
+                    terraform {
+                      required_providers {
+                        proxmox = {
+                          source = "bpg/proxmox"
+                          version = "~> 0.50"
+                        }
+                      }
+                    }
+                    
+                    variable "pm_api_url" { type = string }
+                    variable "pm_api_token_id" { type = string }
+                    variable "pm_api_token_secret" { type = string }
+                    variable "hostname" { type = string }
+                    variable "node" { type = string }
+                    variable "cores" { type = number }
+                    variable "memory" { type = number }
+                    variable "disk_size" { type = number }
+                    variable "storage" { type = string }
+                    variable "bridge" { type = string }
+                    variable "template_id" { type = number }
+                    
+                    provider "proxmox" {
+                      endpoint = var.pm_api_url
+                      api_token = "${var.pm_api_token_id}=${var.pm_api_token_secret}"
+                      insecure = true
+                    }
+                    
+                    resource "proxmox_virtual_environment_vm" "machine" {
+                      name        = var.hostname
+                      node_name   = var.node
+                      
+                      clone {
+                        vm_id = var.template_id
+                        full  = true
+                      }
+                      
+                      cpu {
+                        cores   = var.cores
+                        sockets = 1
+                        type    = "host"
+                      }
+                      
+                      memory {
+                        dedicated = var.memory
+                      }
+                      
+                      disk {
+                        datastore_id = var.storage
+                        interface    = "scsi0"
+                        size         = var.disk_size
+                        discard      = "on"
+                        file_format  = "raw"
+                      }
+                      
+                      network_device {
+                        bridge   = var.bridge
+                        model    = "virtio"
+                        firewall = true
+                      }
+                      
+                      agent {
+                        enabled = true
+                        trim    = true
+                        type    = "virtio"
+                      }
+                      
+                      operating_system {
+                        type = "l26"
+                      }
+                      
+                      on_boot = true
+                      
+                      boot_order = ["scsi0"]
+                    }
+                    
+                    output "vm_id" {
+                      value = proxmox_virtual_environment_vm.machine.id
+                    }
+                  
+                  # Environment variables from secret (Terraform picks up TF_VAR_* automatically)
+                  env:
+                    - name: TF_VAR_pm_api_url
+                      valueFrom:
+                        secretKeyRef:
+                          name: proxmox-terraform-creds
+                          namespace: crossplane-system
+                          key: api_url
+                    - name: TF_VAR_pm_api_token_id
+                      valueFrom:
+                        secretKeyRef:
+                          name: proxmox-terraform-creds
+                          namespace: crossplane-system
+                          key: token_id
+                    - name: TF_VAR_pm_api_token_secret
+                      valueFrom:
+                        secretKeyRef:
+                          name: proxmox-terraform-creds
+                          namespace: crossplane-system
+                          key: token_secret
+                  
+                  vars:
+                    # Credentials now loaded from environment variables above
+                    - key: hostname
+                      value: ""
+                    - key: node
+                      value: ""
+                    - key: cores
+                      value: "2"
+                    - key: memory
+                      value: "4096"
+                    - key: disk_size
+                      value: "32"
+                    - key: storage
+                      value: ""
+                    - key: bridge
+                      value: ""
+                    - key: template_id
+                      value: "9000"
+                
+                providerConfigRef:
+                  name: default
+            
+            patches:
+              # Hostname
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.hostname
+                toFieldPath: spec.forProvider.vars[0].value
+              
+              # Node
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.proxmox.node
+                toFieldPath: spec.forProvider.vars[1].value
+              
+              # CPU Cores
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.cpu.cores
+                toFieldPath: spec.forProvider.vars[2].value
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%v"
+              
+              # Memory
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.memory.size
+                toFieldPath: spec.forProvider.vars[3].value
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%v"
+              
+              # Disk Size
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.disk.size
+                toFieldPath: spec.forProvider.vars[4].value
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%v"
+              
+              # Storage
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.proxmox.storage
+                toFieldPath: spec.forProvider.vars[5].value
+              
+              # Bridge
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.proxmox.bridge
+                toFieldPath: spec.forProvider.vars[6].value
+              
+              # Template ID (map from image name to VM ID)
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.image
+                toFieldPath: spec.forProvider.vars[7].value
+                transforms:
+                  - type: map
+                    map:
+                      nixos-23-11-template: "9000"
+                      nixos-24-05-template: "9001"

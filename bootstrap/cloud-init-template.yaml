@@ -1,0 +1,119 @@
+#cloud-config
+# Bootstrap template for Fabric-managed NixOS VMs
+# This file should be templated by Crossplane Composition
+
+# Set hostname
+hostname: ${HOSTNAME}
+fqdn: ${HOSTNAME}.${DOMAIN}
+
+# Preserve existing hostname settings
+preserve_hostname: false
+
+# Create admin user
+users:
+  - name: ${ADMIN_USER}
+    groups: wheel
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    ssh_authorized_keys: ${SSH_AUTHORIZED_KEYS}
+
+# Resize root filesystem if needed
+growpart:
+  mode: auto
+  devices: ['/']
+  ignore_growroot_disabled: false
+
+# Configure networking (if static)
+# Note: For NixOS, this may be overridden by NixOS config after first apply
+write_files:
+  - path: /etc/nix-flake-target
+    content: ${FLAKE_REF}
+    permissions: '0644'
+    owner: root:root
+  
+  - path: /etc/systemd/system/nixos-bootstrap.service
+    content: |
+      [Unit]
+      Description=Bootstrap NixOS from Git
+      After=network-online.target
+      Wants=network-online.target
+      ConditionPathExists=!/var/lib/nixos-bootstrap-complete
+      
+      [Service]
+      Type=oneshot
+      ExecStart=/run/current-system/sw/bin/nixos-bootstrap
+      RemainAfterExit=yes
+      StandardOutput=journal+console
+      StandardError=journal+console
+      
+      [Install]
+      WantedBy=multi-user.target
+    permissions: '0644'
+    owner: root:root
+  
+  - path: /run/current-system/sw/bin/nixos-bootstrap
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      
+      FLAKE_REF=$(cat /etc/nix-flake-target)
+      
+      echo "===================================="
+      echo "NixOS Bootstrap Starting"
+      echo "Flake: $FLAKE_REF"
+      echo "===================================="
+      
+      # Wait for network
+      echo "Waiting for network..."
+      until ping -c1 github.com &>/dev/null; do
+        sleep 5
+      done
+      
+      echo "Network is up, pulling configuration..."
+      
+      # Pull and apply configuration
+      if nixos-rebuild switch --flake "$FLAKE_REF" --no-build-output; then
+        echo "Bootstrap completed successfully"
+        touch /var/lib/nixos-bootstrap-complete
+        systemctl disable nixos-bootstrap.service
+      else
+        echo "Bootstrap failed! Manual intervention required."
+        exit 1
+      fi
+      
+      echo "===================================="
+      echo "NixOS Bootstrap Complete"
+      echo "===================================="
+    permissions: '0755'
+    owner: root:root
+
+# Run commands on first boot
+runcmd:
+  # Enable and start bootstrap service
+  - systemctl daemon-reload
+  - systemctl enable nixos-bootstrap.service
+  - systemctl start nixos-bootstrap.service
+
+# Optional: Set static networking (Proxmox can also handle this)
+# network:
+#   version: 2
+#   ethernets:
+#     ${NETWORK_INTERFACE}:
+#       addresses:
+#         - ${STATIC_IP}/${CIDR}
+#       gateway4: ${GATEWAY}
+#       nameservers:
+#         addresses: ${DNS_SERVERS}
+
+# Final message
+final_message: |
+  ========================================
+  Fabric NixOS VM Bootstrap
+  ========================================
+  Hostname: ${HOSTNAME}
+  Time: $TIMESTAMP
+  Uptime: $UPTIME
+  
+  The system is bootstrapping from Git.
+  Check: journalctl -u nixos-bootstrap -f
+  ========================================

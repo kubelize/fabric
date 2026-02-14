@@ -1,0 +1,49 @@
+apiVersion: proxmox.bpg.crossplane.io/v1alpha1
+kind: ProviderConfig
+metadata:
+  name: default
+spec:
+  # Proxmox API endpoint
+  endpoint: https://proxmox.example.com:8006/api2/json
+  
+  # Credentials
+  credentials:
+    source: Secret
+    secretRef:
+      namespace: crossplane-system
+      name: proxmox-creds
+      key: credentials
+  
+  # TLS configuration
+  insecure: true  # Set to false for production with valid certs
+
+---
+# To create the credentials secret, run:
+#
+# kubectl create secret generic proxmox-creds \
+#   --namespace crossplane-system \
+#   --from-literal=credentials='{
+#     "endpoint": "https://proxmox.example.com:8006",
+#     "username": "root@pam",
+#     "password": "your-password",
+#     "insecure": true
+#   }'
+#
+# Or with API token (recommended):
+# kubectl create secret generic proxmox-creds \
+#   --namespace crossplane-system \
+#   --from-literal=credentials='{
+#     "endpoint": "https://proxmox.example.com:8006",
+#     "api_token": "root@pam!mytoken=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+#     "insecure": true
+#   }'
+#
+# How to create API token in Proxmox:
+# 1. Log into Proxmox web UI
+# 2. Datacenter → Permissions → API Tokens
+# 3. Add token for user (e.g., root@pam)
+# 4. Privilege Separation: Uncheck for full permissions
+# 5. Copy the token value - you won't see it again!
+#
+# Note: This uses provider-proxmox-bpg v1.3.0+
+# Docs: https://marketplace.upbound.io/providers/valkiriaaquaticamendi/provider-proxmox-bpg/v1.3.0

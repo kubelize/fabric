@@ -1,0 +1,36 @@
+apiVersion: infra.kubelize.io/v1alpha1
+kind: Machine
+metadata:
+  name: docker01
+  namespace: infra-machines
+  labels:
+    role: docker-host
+    tier: compute
+spec:
+  cpu:
+    cores: 4
+  memory:
+    size: 8192  # 8GB
+  disk:
+    size: 100  # 100GB
+  hostname: docker01
+  network:
+    ip: 10.0.1.20
+    cidr: 24
+    gateway: 10.0.1.1
+    dns:
+      - 10.0.1.10  # Use our DNS server
+      - 1.1.1.1
+  proxmox:
+    storage: local-zfs
+    bridge: vmbr0
+  image: nixos-23-11-template
+  nix:
+    flakeRef: git+https://github.com/kubelize/fabric?ref=main#docker01
+  bootstrap:
+    sshAuthorizedKeys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5... admin@homelab
+    adminUser: admin
+  tags:
+    environment: production
+    managed-by: crossplane

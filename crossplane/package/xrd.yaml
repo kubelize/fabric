@@ -1,0 +1,200 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: xmachines.infra.kubelize.io
+spec:
+  group: infra.kubelize.io
+  names:
+    kind: XMachine
+    plural: xmachines
+  claimNames:
+    kind: Machine
+    plural: machines
+  
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required:
+                - hostname
+                - image
+                - nix
+                - bootstrap
+                - cpu
+                - memory
+              properties:
+                cpu:
+                  type: object
+                  description: CPU configuration
+                  required:
+                    - cores
+                  properties:
+                    cores:
+                      type: integer
+                      description: Number of CPU cores
+                      minimum: 1
+                      maximum: 128
+                    sockets:
+                      type: integer
+                      description: Number of CPU sockets
+                      minimum: 1
+                      default: 1
+                
+                memory:
+                  type: object
+                  description: Memory configuration
+                  required:
+                    - size
+                  properties:
+                    size:
+                      type: integer
+                      description: Memory size in MB
+                      minimum: 512
+                      maximum: 524288
+                
+                disk:
+                  type: object
+                  description: Disk configuration
+                  properties:
+                    size:
+                      type: integer
+                      description: Disk size in GB
+                      minimum: 8
+                      default: 32
+                
+                hostname:
+                  type: string
+                  description: VM hostname
+                  pattern: '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$'
+                
+                network:
+                  type: object
+                  description: Network configuration
+                  properties:
+                    dhcp:
+                      type: boolean
+                      description: Use DHCP for network configuration
+                      default: false
+                    ip:
+                      type: string
+                      description: Static IP address
+                      pattern: '^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$'
+                    cidr:
+                      type: integer
+                      description: Network prefix length
+                      minimum: 1
+                      maximum: 32
+                      default: 24
+                    gateway:
+                      type: string
+                      description: Default gateway
+                      pattern: '^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$'
+                    dns:
+                      type: array
+                      description: DNS servers
+                      items:
+                        type: string
+                      default:
+                        - "1.1.1.1"
+                        - "8.8.8.8"
+                
+                proxmox:
+                  type: object
+                  description: Proxmox-specific settings
+                  properties:
+                    node:
+                      type: string
+                      description: Proxmox node to create VM on (optional)
+                    storage:
+                      type: string
+                      description: Storage pool for VM disks
+                      default: "local-zfs"
+                    bridge:
+                      type: string
+                      description: Network bridge
+                      default: "vmbr0"
+                    vlan:
+                      type: integer
+                      description: VLAN tag (optional)
+                      minimum: 1
+                      maximum: 4094
+                
+                image:
+                  type: string
+                  description: NixOS template identifier
+                  default: "nixos-23-11-template"
+                
+                nix:
+                  type: object
+                  description: Nix flake configuration
+                  required:
+                    - flakeRef
+                  properties:
+                    flakeRef:
+                      type: string
+                      description: Git flake reference
+                      pattern: '^git\+https?://.*#.*$'
+                
+                bootstrap:
+                  type: object
+                  description: Bootstrap configuration
+                  required:
+                    - sshAuthorizedKeys
+                    - adminUser
+                  properties:
+                    sshAuthorizedKeys:
+                      type: array
+                      description: SSH public keys for admin user
+                      items:
+                        type: string
+                      minItems: 1
+                    adminUser:
+                      type: string
+                      description: Admin username
+                      default: "admin"
+                
+                tags:
+                  type: object
+                  description: Arbitrary tags for organizational purposes
+                  additionalProperties:
+                    type: string
+            
+            status:
+              type: object
+              properties:
+                vmId:
+                  type: integer
+                  description: Proxmox VM ID
+                ipAddress:
+                  type: string
+                  description: Assigned IP address
+                state:
+                  type: string
+                  description: VM state
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - lastTransitionTime
+                      - reason
+                      - status
+                      - type
+                    properties:
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
+                      message:
+                        type: string
+                      reason:
+                        type: string
+                      status:
+                        type: string
+                      type:
+                        type: string

@@ -1,0 +1,25 @@
+# Nix
+result
+result-*
+.direnv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets (just in case)
+*.key
+*.pem
+secrets/
+.env
+
+# Test/temporary files
+test-*.yaml
+/crossplane/claims/test-deployment.yaml

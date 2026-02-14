@@ -1,0 +1,37 @@
+apiVersion: infra.kubelize.io/v1alpha1
+kind: Machine
+metadata:
+  name: dns01
+  namespace: infra-machines
+  labels:
+    role: dns
+    tier: core
+spec:
+  cpu:
+    cores: 2
+  memory:
+    size: 2048  # 2GB
+  disk:
+    size: 32  # 32GB
+  hostname: dns01
+  network:
+    ip: 10.0.1.10
+    cidr: 24
+    gateway: 10.0.1.1
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+  proxmox:
+    node: pve01  # Optional: pin to specific node
+    storage: local-zfs
+    bridge: vmbr0
+  image: nixos-23-11-template
+  nix:
+    flakeRef: git+https://github.com/kubelize/fabric?ref=main#dns01
+  bootstrap:
+    sshAuthorizedKeys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5... admin@homelab
+    adminUser: admin
+  tags:
+    environment: production
+    managed-by: crossplane

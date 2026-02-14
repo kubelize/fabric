@@ -1,0 +1,71 @@
+apiVersion: meta.pkg.crossplane.io/v1
+kind: Configuration
+metadata:
+  name: fabric-machine-api
+  annotations:
+    meta.crossplane.io/maintainer: Fabric Team
+    meta.crossplane.io/source: github.com/kubelize/fabric
+    meta.crossplane.io/license: Apache-2.0
+    meta.crossplane.io/description: |
+      Machine API for provisioning NixOS VMs on Proxmox with GitOps self-management.
+    meta.crossplane.io/readme: |
+      # Fabric Machine API
+      
+      This package provides the Machine API for provisioning and managing NixOS VMs
+      on Proxmox infrastructure with GitOps-driven configuration management.
+      
+      ## What's Included
+      
+      - **XMachine** XRD: Defines the Machine composite resource
+      - **Machine** Claim: Namespace-scoped Machine claims
+      - Compositions for Proxmox VM provisioning
+      
+      ## Prerequisites
+      
+      - Crossplane v1.14+
+      - Proxmox provider (Terraform-based or native)
+      - Proxmox VE cluster with NixOS template VM
+      
+      ## Usage
+      
+      Create a Machine claim:
+      
+      ```yaml
+      apiVersion: infra.kubelize.io/v1alpha1
+      kind: Machine
+      metadata:
+        name: my-vm
+        namespace: infra-machines
+      spec:
+        cpu:
+          cores: 2
+        memory:
+          size: 4096  # 4GB
+        disk:
+          size: 32  # 32GB
+        hostname: my-vm
+        network:
+          dhcp: true
+        proxmox:
+          storage: local-zfs
+          bridge: vmbr0
+        image: nixos-23-11-template
+        nix:
+          flakeRef: git+https://github.com/kubelize/fabric?ref=main#my-vm
+        bootstrap:
+          adminUser: admin
+          sshAuthorizedKeys:
+            - ssh-ed25519 AAAAC3...
+      ```
+      
+      See the claims/examples/ directory for more examples.
+spec:
+  crossplane:
+    version: ">=v1.14.0"
+  dependsOn:
+    # Terraform provider for managing Proxmox VMs via bpg/proxmox Terraform provider
+    - provider: xpkg.upbound.io/upbound/provider-terraform
+      version: ">=v0.15.0"
+    # Function for patch and transform operations
+    - function: xpkg.upbound.io/crossplane-contrib/function-patch-and-transform
+      version: ">=v0.10.0"

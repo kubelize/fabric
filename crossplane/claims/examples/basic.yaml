@@ -1,0 +1,35 @@
+apiVersion: infra.kubelize.io/v1alpha1
+kind: Machine
+metadata:
+  name: test-vm
+  namespace: infra-machines
+  labels:
+    role: test
+    tier: dev
+spec:
+  compositionSelector:
+    matchLabels:
+      provider: terraform
+  cpu:
+    cores: 2
+  memory:
+    size: 4096  # 4GB
+  disk:
+    size: 32  # 32GB
+  hostname: test-vm
+  network:
+    dhcp: true
+  proxmox:
+    node: pve-sora  # Proxmox node name
+    storage: block
+    bridge: vmbr0
+  image: nixos-23-11-template
+  nix:
+    flakeRef: git+https://github.com/kubelize/fabric?ref=main#test-vm
+  bootstrap:
+    sshAuthorizedKeys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5... admin@homelab
+    adminUser: admin
+  tags:
+    environment: development
+    managed-by: crossplane

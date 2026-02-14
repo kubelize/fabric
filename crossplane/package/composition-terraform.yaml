@@ -1,0 +1,275 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xmachine.infra.kubelize.io
+  labels:
+    provider: proxmox-bpg
+spec:
+  writeConnectionSecretsToNamespace: crossplane-system
+  
+  compositeTypeRef:
+    apiVersion: infra.kubelize.io/v1alpha1
+    kind: XMachine
+  
+  resources:
+    # Main VM resource using provider-proxmox-bpg
+    # Based on bpg/terraform-provider-proxmox wrapped as a native Crossplane provider
+    - name: virtualmachine
+      base:
+        apiVersion: vm.proxmox.bpg.crossplane.io/v1alpha1
+        kind: VM2
+        spec:
+          forProvider:
+            # These will be patched from the claim
+            name: ""
+            node: ""
+            clone: ""
+            
+            # VM resources - will be set based on class
+            cores: 2
+            memory: 4096
+            
+            # Disk configuration
+            disk:
+              - storage: ""
+                size: 32G
+                type: scsi
+            
+            # Network configuration
+            network:
+              - model: virtio
+                bridge: ""
+                firewall: true
+            
+            # Cloud-init configuration
+            # This is a simplified example - actual implementation depends on your provider
+            cloudInit:
+              enabled: true
+              # userData will be patched with full cloud-init config
+              userData: |
+                #cloud-config
+                hostname: placeholder
+            
+            # QEMU agent
+            agent: 1
+            
+            # Boot order
+            boot: "order=scsi0"
+            
+            # Start on boot
+            onboot: true
+      
+      patches:
+        # Hostname
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.hostname
+          toFieldPath: spec.forProvider.name
+        
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.hostname
+          toFieldPath: metadata.labels['fabric.io/hostname']
+        
+        # Proxmox node (optional)
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.proxmox.node
+          toFieldPath: spec.forProvider.node
+          policy:
+            fromFieldPath: Optional
+        
+        # Storage
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.proxmox.storage
+          toFieldPath: spec.forProvider.disk[0].storage
+        
+        # Network bridge
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.proxmox.bridge
+          toFieldPath: spec.forProvider.network[0].bridge
+        
+        # VLAN (optional)
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.proxmox.vlan
+          toFieldPath: spec.forProvider.network[0].tag
+          policy:
+            fromFieldPath: Optional
+        
+        # Template/Image
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.image
+          toFieldPath: spec.forProvider.clone
+        
+        # VM Class - Small (2 CPU, 4GB RAM, 32GB disk)
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.class
+          toFieldPath: spec.forProvider.cores
+          transforms:
+            - type: map
+              map:
+                small: "2"
+                medium: "4"
+                large: "8"
+        
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.class
+          toFieldPath: spec.forProvider.memory
+          transforms:
+            - type: map
+              map:
+                small: "4096"
+                medium: "8192"
+                large: "16384"
+        
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.class
+          toFieldPath: spec.forProvider.disk[0].size
+          transforms:
+            - type: map
+              map:
+                small: "32G"
+                medium: "100G"
+                large: "200G"
+        
+        # Network - Static IP configuration
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.network.ip
+          toFieldPath: spec.forProvider.network[0].ip
+          policy:
+            fromFieldPath: Optional
+        
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.network.cidr
+          toFieldPath: spec.forProvider.network[0].cidr
+          policy:
+            fromFieldPath: Optional
+        
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.network.gateway
+          toFieldPath: spec.forProvider.network[0].gateway
+          policy:
+            fromFieldPath: Optional
+        
+        # Cloud-init user data - This needs complex templating
+        # The actual implementation will depend on your Proxmox provider's capabilities
+        # Some providers support cloud-init natively, others may need snippets
+        
+        # Status fields
+        - type: ToCompositeFieldPath
+          fromFieldPath: status.atProvider.vmId
+          toFieldPath: status.vmId
+        
+        - type: ToCompositeFieldPath
+          fromFieldPath: status.atProvider.ipAddress
+          toFieldPath: status.ipAddress
+        
+        - type: ToCompositeFieldPath
+          fromFieldPath: status.atProvider.state
+          toFieldPath: status.state
+      
+      readinessChecks:
+        - type: MatchString
+          fieldPath: status.atProvider.state
+          matchString: "running"
+
+---
+# Alternative: Composition using Terraform provider
+# If using crossplane-contrib/provider-terraform
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xmachine-terraform.infra.kubelize.io
+  labels:
+    provider: terraform
+spec:
+  writeConnectionSecretsToNamespace: crossplane-system
+  
+  compositeTypeRef:
+    apiVersion: infra.kubelize.io/v1alpha1
+    kind: XMachine
+  
+  resources:
+    - name: proxmox-vm
+      base:
+        apiVersion: tf.upbound.io/v1beta1
+        kind: Workspace
+        spec:
+          forProvider:
+            # Terraform module that creates Proxmox VM
+            module: |
+              terraform {
+                required_providers {
+                  proxmox = {
+                    source = "telmate/proxmox"
+                    version = "~> 2.9"
+                  }
+                }
+              }
+              
+              variable "hostname" { type = string }
+              variable "cores" { type = number }
+              variable "memory" { type = number }
+              variable "disk_size" { type = string }
+              variable "storage" { type = string }
+              variable "bridge" { type = string }
+              variable "ip_address" { type = string default = "" }
+              variable "gateway" { type = string default = "" }
+              variable "template" { type = string }
+              variable "cloud_init_user" { type = string }
+              variable "ssh_keys" { type = string }
+              variable "flake_ref" { type = string }
+              
+              resource "proxmox_vm_qemu" "machine" {
+                name        = var.hostname
+                target_node = "pve"  # Could be parametrized
+                clone       = var.template
+                
+                cores   = var.cores
+                memory  = var.memory
+                
+                disk {
+                  storage = var.storage
+                  size    = var.disk_size
+                  type    = "scsi"
+                }
+                
+                network {
+                  model  = "virtio"
+                  bridge = var.bridge
+                }
+                
+                # Cloud-init configuration
+                os_type    = "cloud-init"
+                ciuser     = var.cloud_init_user
+                sshkeys    = var.ssh_keys
+                ipconfig0  = var.ip_address != "" ? "ip=${var.ip_address}/24,gw=${var.gateway}" : "ip=dhcp"
+                
+                # Custom cloud-init via snippet would go here
+                # cicustom = "user=local:snippets/nixos-bootstrap.yaml"
+              }
+              
+              output "vm_id" {
+                value = proxmox_vm_qemu.machine.vmid
+              }
+              
+              output "ip_address" {
+                value = proxmox_vm_qemu.machine.default_ipv4_address
+              }
+            
+            # Variables will be patched from claim
+            vars:
+              - key: hostname
+                value: ""
+              - key: cores
+                value: "2"
+              - key: memory
+                value: "4096"
+              - key: disk_size
+                value: "32G"
+      
+      patches:
+        # Patch all the variables from the claim
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.hostname
+          toFieldPath: spec.forProvider.vars[0].value
+        
+        # Add more patches for other variables...
+        # (Similar pattern to the above composition)

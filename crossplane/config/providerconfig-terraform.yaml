@@ -1,0 +1,22 @@
+apiVersion: tf.upbound.io/v1beta1
+kind: ProviderConfig
+metadata:
+  name: default
+spec:
+  # Use Kubernetes backend for Terraform state storage
+  configuration: |
+    terraform {
+      backend "kubernetes" {
+        secret_suffix     = "tfstate"
+        namespace         = "crossplane-system"
+        in_cluster_config = true
+      }
+    }
+
+---
+# NOTE: Proxmox credentials are configured at the Workspace level via environment variables
+# See: crossplane/config/proxmox-terraform-secret.yaml
+# See: crossplane/config/SECRET-INTEGRATION.md for implementation details
+#
+# The ProviderConfig only configures the Terraform backend for state storage.
+# Credentials are passed to each Workspace via TF_VAR_* environment variables.

@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: infra-machines
+  labels:
+    app.kubernetes.io/name: infra-machines
+    app.kubernetes.io/part-of: fabric
+    managed-by: crossplane
