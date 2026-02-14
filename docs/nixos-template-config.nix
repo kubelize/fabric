@@ -57,5 +57,5 @@
   # Clean up on shutdown to reduce template size
   boot.tmp.cleanOnBoot = true;
 
-  system.stateVersion = "24.05";
+  system.stateVersion = "25.11";
 }

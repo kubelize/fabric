@@ -149,7 +149,7 @@ mount /dev/disk/by-label/nixos /mnt
 nixos-generate-config --root /mnt
 
 # Download the minimal template configuration
-wget -O /mnt/etc/nixos/configuration.nix https://raw.githubusercontent.com/kubelize/fabric/main/docs/nixos-template-config.nix
+curl -o /mnt/etc/nixos/configuration.nix https://raw.githubusercontent.com/kubelize/fabric/main/docs/nixos-template-config.nix
 
 # Optional: Edit to add your SSH key
 # nano /mnt/etc/nixos/configuration.nix
