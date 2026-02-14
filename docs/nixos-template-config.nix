@@ -9,8 +9,8 @@
   boot.loader.grub.enable = true;
   boot.loader.grub.device = "/dev/sda";
 
-  # Enable QEMU guest agent
-  services.qemu-guest-agent.enable = true;
+  # Enable QEMU guest agent for Proxmox
+  services.qemuGuest.enable = true;
 
   # Cloud-init support (optional but recommended)
   services.cloud-init = {
