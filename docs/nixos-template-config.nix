@@ -5,6 +5,12 @@
 {
   imports = [ ./hardware-configuration.nix ];
 
+  # Root filesystem
+  fileSystems."/" = {
+    device = "/dev/disk/by-label/nixos";
+    fsType = "ext4";
+  };
+
   # Boot loader
   boot.loader.grub.enable = true;
   boot.loader.grub.device = "/dev/sda";
